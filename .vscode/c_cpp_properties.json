@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "/home/ruan/.arduino15/packages/arduino/tools/**",
+                "/home/ruan/.arduino15/packages/arduino/hardware/sam/1.6.12/**"
+            ],
+            "forcedInclude": [
+                "/home/ruan/.arduino15/packages/arduino/hardware/sam/1.6.12/cores/arduino/Arduino.h"
+            ],
+            "intelliSenseMode": "gcc-x64",
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++17"
+        }
+    ],
+    "version": 4
+}

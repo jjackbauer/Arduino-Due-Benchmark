@@ -1,0 +1,9 @@
+{
+    "sketch": "benckmarkDue/benckmarkDue.ino",
+    "board": "arduino:sam:arduino_due_x",    
+    "port": "/dev/ttyACM0",
+    "output": "./build",
+    "debugger": "jlink",
+    "prebuild": "",
+    "programmer": "AVRISP mkII"
+}
