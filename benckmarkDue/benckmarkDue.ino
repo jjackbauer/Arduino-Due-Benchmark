@@ -13,14 +13,22 @@ unsigned long Start,End;
 long long int c=0,c1;
 long long int n=20,n1=10000000;
 double A=0,B=1,C=1;
-double uTime[20],uMeanTime,sd,HV,LV;
+double uTime[20],uMeanTime,sd,HV,LV,overheadMeanTime;
 double studentT19=2.0930;// Retirado do livro Modelagem e Simulação Discreta do professor Brauliro.
 
 
 void benchStatistics()
 {
-    
+    for(c=0;c<n;c++)
+    {
+      uTime[c]-=overheadMeanTime;
+      uTime[c] = fabs(uTime[c]);
+    }
+
     uMeanTime/=(n);
+    uMeanTime-=overheadMeanTime;
+    uMeanTime = fabs(uMeanTime);
+    
     sd=0;
     for(c=0;c<n;c++)
     {
@@ -55,11 +63,15 @@ void overheadBench()
    for(c=0;c<n;c++)
     {
       Start=micros();
-      for(c1=0;c1<n1;c1++);
+      for(c1=0;c1<n1;c1++)
+      {
+        asm("nop");
+      }
       End=micros();
       uMeanTime+=((double)(End-Start))/n1;
       uTime[c]=(((double)(End-Start)))/n1;
     }  
+    overheadMeanTime = uMeanTime/n;
     benchStatistics();
 }
 void divisionBench()
