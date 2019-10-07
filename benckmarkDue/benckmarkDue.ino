@@ -25,11 +25,13 @@ void benchStatistics()
 {
 	for (c = 0; c < N_ITERATIONS; c++)
 	{
+		uTime[c]*=1000;
 		uTime[c] -= overheadMeanTime;
 		uTime[c] = fabs(uTime[c]);
 	}
 
 	uMeanTime /= (N_ITERATIONS);
+	uMeanTime*=1000;
 	uMeanTime -= overheadMeanTime;
 	uMeanTime = fabs(uMeanTime);
 
@@ -40,7 +42,7 @@ void benchStatistics()
 		SerialUSB.print((int)c);
 		SerialUSB.print(" : ");
 		SerialUSB.print(uTime[c], 16);
-		SerialUSB.println(" us");
+		SerialUSB.println(" ns");
 		standardDeviation += pow((uTime[c] - uMeanTime), 2);
 	}
 	standardDeviation /= (N_ITERATIONS - 1);
@@ -51,20 +53,20 @@ void benchStatistics()
 	LV1 = uMeanTime - studentT191 * standardDeviation / sqrt(N_ITERATIONS);
 	SerialUSB.print("Mean:");
 	SerialUSB.print(uMeanTime, 8);
-	SerialUSB.println(" us");
+	SerialUSB.println(" ns");
 	SerialUSB.print("Standard Deviation:");
 	SerialUSB.print(standardDeviation, 8);
-	SerialUSB.println(" us^2");
+	SerialUSB.println(" ns^2");
 	SerialUSB.print("Confiance Interval (Alpha 5%): [");
 	SerialUSB.print(LV5, 8);
 	SerialUSB.print(" , ");
 	SerialUSB.print(HV5, 8);
-	SerialUSB.println("] us");
+	SerialUSB.println("] ns");
   SerialUSB.print("Confiance Interval (Alpha 1%): [");
 	SerialUSB.print(LV1, 8);
 	SerialUSB.print(" , ");
 	SerialUSB.print(HV1, 8);
-	SerialUSB.println("] us");
+	SerialUSB.println("] ns");
 }
 void overheadBench()
 {
@@ -82,6 +84,7 @@ void overheadBench()
 		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
 	}
 	overheadMeanTime = uMeanTime / N_ITERATIONS;
+	overheadMeanTime*=1000;
 	benchStatistics();
 }
 void divisionBench()
