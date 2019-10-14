@@ -4,346 +4,511 @@
 			Github: jjackbauer 
 */
 #include <math.h>
+#include <SomeSerial.h>
 
-#define N_ITERATIONS 20			 // has to be 20 for the used T student
-#define N_BATCH_ITERATIONS 10000 // the bigger the better, but it will take more time to finish
+#define N_BATCHES 20 // has to be 20 for the used T student
+#define DEFAULT_BATCH_ITERATIONS 1000
+#define FULL_STATISTICS 1 // use full statistics function
+
+#if defined(ARDUINO_ARCH_SAM)
+SomeSerial LogSerial = SomeSerial(&SerialUSB);
+#else
+SomeSerial LogSerial = SomeSerial(&Serial);
+#endif
 
 void setup()
 {
-	SerialUSB.begin(115200);
+	LogSerial.begin(115200);
+	// Se o pino de entrada analógica 4 é deixado desconectado,
+	// o ruído aleatório analógico irá causar a chamada de randomSeed()
+	// gerar sementes aleatórias diferentes cada vez que o sketch roda.
+	// randomSeed() basicamente "embaralha" a função random().
+	randomSeed(analogRead(4));
 }
 bool entrou = false;
 unsigned long Start, End;
-int i=1,j=1,k=1;
+int i = 1, j = 1, k = 1;
+int numberBatchIterations = DEFAULT_BATCH_ITERATIONS; // the bigger the better, but it will take more time to finish
 long long int c = 0, c1;
 double A = 1, B = 1, C = 1;
-double uTime[20], uMeanTime, standardDeviation, HV5, LV5,HV1,LV1,overheadMeanTime;
+double uTime[20], uMeanTime, standardDeviation, HV5, LV5, HV1, LV1, overheadMeanTime, uMeanTimeMinusOverhead;
 double studentT195 = 2.0930; // gl = 19, alpha = 5 Retirado do livro Modelagem e Simulação Discreta do professor Brauliro, 2016.
-double studentT191 = 2.5395;// gl = 19, alpha = 1 Retirado do livro Modelagem e Simulação Discreta do professor Brauliro, 2016.
+double studentT191 = 2.5395; // gl = 19, alpha = 1 Retirado do livro Modelagem e Simulação Discreta do professor Brauliro, 2016.
 
+void randomizeVariables()
+{
+	A = (double)random(1000) / (double)random(1000);
+	B = (double)random(1000) / (double)random(1000);
+	C = (double)random(1000) / (double)random(1000);
+	i = random(1000);
+	j = random(1000);
+	k = random(1000);
+}
+void statistics()
+{
+	if (FULL_STATISTICS == 1)
+		benchStatisticsAlternative();
+	else
+		benchStatistics();
+}
+void benchStatisticsAlternative()
+{
+	uMeanTime /= (N_BATCHES);
+	uMeanTime *= 1000;
+	uMeanTimeMinusOverhead = uMeanTime - overheadMeanTime;
+	uMeanTimeMinusOverhead = fabs(uMeanTimeMinusOverhead);
+
+	standardDeviation = 0;
+	LogSerial.println("BATCH_NUMBER: \t TIME_PER_OPERATION \t TIME_MINUS_OVERHEAD");
+	for (c = 0; c < N_BATCHES; c++)
+	{
+		uTime[c] *= 1000;
+		LogSerial.print("Iteration ");
+		LogSerial.print((int)c);
+		LogSerial.print(": \t");
+		LogSerial.print(uTime[c], 8);
+		LogSerial.print(" ns \t");
+
+		uTime[c] -= overheadMeanTime;
+
+		LogSerial.print(uTime[c], 8);
+		LogSerial.println(" ns");
+
+		uTime[c] = fabs(uTime[c]);
+		standardDeviation += pow((uTime[c] - uMeanTimeMinusOverhead), 2);
+	}
+	standardDeviation /= (N_BATCHES - 1);
+	standardDeviation = sqrt(standardDeviation);
+	HV5 = uMeanTimeMinusOverhead + studentT195 * standardDeviation / sqrt(N_BATCHES);
+	LV5 = uMeanTimeMinusOverhead - studentT195 * standardDeviation / sqrt(N_BATCHES);
+	HV1 = uMeanTimeMinusOverhead + studentT191 * standardDeviation / sqrt(N_BATCHES);
+	LV1 = uMeanTimeMinusOverhead - studentT191 * standardDeviation / sqrt(N_BATCHES);
+	LogSerial.print("Mean: ");
+	LogSerial.print(uMeanTime, 8);
+	LogSerial.println(" ns");
+	LogSerial.print("Overhead Mean: ");
+	LogSerial.print(overheadMeanTime, 8);
+	LogSerial.println(" ns");
+	LogSerial.print("Mean Minus Overhead: ");
+	LogSerial.print(uMeanTimeMinusOverhead, 8);
+	LogSerial.println(" ns");
+	LogSerial.print("Standard Deviation: ");
+	LogSerial.print(standardDeviation, 8);
+	LogSerial.println(" ns^2");
+	LogSerial.print("Confidence Interval (Alpha 5%): [");
+	LogSerial.print(LV5, 8);
+	LogSerial.print(" , ");
+	LogSerial.print(HV5, 8);
+	LogSerial.println("] ns");
+	LogSerial.print("Confidence Interval (Alpha 1%): [");
+	LogSerial.print(LV1, 8);
+	LogSerial.print(" , ");
+	LogSerial.print(HV1, 8);
+	LogSerial.println("] ns");
+}
 void benchStatistics()
 {
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
-		uTime[c]*=1000;
+		uTime[c] *= 1000;
 		uTime[c] -= overheadMeanTime;
 		uTime[c] = fabs(uTime[c]);
 	}
 
-	uMeanTime /= (N_ITERATIONS);
-	uMeanTime*=1000;
+	uMeanTime /= (N_BATCHES);
+	uMeanTime *= 1000;
 	uMeanTime -= overheadMeanTime;
 	uMeanTime = fabs(uMeanTime);
 
 	standardDeviation = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
-		SerialUSB.print("Iteration ");
-		SerialUSB.print((int)c);
-		SerialUSB.print(" : ");
-		SerialUSB.print(uTime[c], 16);
-		SerialUSB.println(" ns");
+		LogSerial.print("Iteration ");
+		LogSerial.print((int)c);
+		LogSerial.print(": ");
+		LogSerial.print(uTime[c], 8);
+		LogSerial.println(" ns");
 		standardDeviation += pow((uTime[c] - uMeanTime), 2);
 	}
-	standardDeviation /= (N_ITERATIONS - 1);
+	standardDeviation /= (N_BATCHES - 1);
 	standardDeviation = sqrt(standardDeviation);
-	HV5 = uMeanTime + studentT195 * standardDeviation / sqrt(N_ITERATIONS);
-	LV5 = uMeanTime - studentT195 * standardDeviation / sqrt(N_ITERATIONS);
-  HV1 = uMeanTime + studentT191 * standardDeviation / sqrt(N_ITERATIONS);
-	LV1 = uMeanTime - studentT191 * standardDeviation / sqrt(N_ITERATIONS);
-	SerialUSB.print("Mean:");
-	SerialUSB.print(uMeanTime, 8);
-	SerialUSB.println(" ns");
-	SerialUSB.print("Standard Deviation:");
-	SerialUSB.print(standardDeviation, 8);
-	SerialUSB.println(" ns^2");
-	SerialUSB.print("Confiance Interval (Alpha 5%): [");
-	SerialUSB.print(LV5, 8);
-	SerialUSB.print(" , ");
-	SerialUSB.print(HV5, 8);
-	SerialUSB.println("] ns");
-  SerialUSB.print("Confiance Interval (Alpha 1%): [");
-	SerialUSB.print(LV1, 8);
-	SerialUSB.print(" , ");
-	SerialUSB.print(HV1, 8);
-	SerialUSB.println("] ns");
+	HV5 = uMeanTime + studentT195 * standardDeviation / sqrt(N_BATCHES);
+	LV5 = uMeanTime - studentT195 * standardDeviation / sqrt(N_BATCHES);
+	HV1 = uMeanTime + studentT191 * standardDeviation / sqrt(N_BATCHES);
+	LV1 = uMeanTime - studentT191 * standardDeviation / sqrt(N_BATCHES);
+	LogSerial.print("Mean: ");
+	LogSerial.print(uMeanTime, 8);
+	LogSerial.println(" ns");
+	LogSerial.print("Standard Deviation: ");
+	LogSerial.print(standardDeviation, 8);
+	LogSerial.println(" ns^2");
+	LogSerial.print("Confidence Interval (Alpha 5%): [");
+	LogSerial.print(LV5, 8);
+	LogSerial.print(" , ");
+	LogSerial.print(HV5, 8);
+	LogSerial.println("] ns");
+	LogSerial.print("Confidence Interval (Alpha 1%): [");
+	LogSerial.print(LV1, 8);
+	LogSerial.print(" , ");
+	LogSerial.print(HV1, 8);
+	LogSerial.println("] ns");
 }
 void overheadBench()
 {
-	SerialUSB.println("<Overhead>");
+	LogSerial.println("<Overhead>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
+
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			asm("nop");
+			randomizeVariables();
+			A = B;
+			i = k;
+			// asm("nop");
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	overheadMeanTime = uMeanTime / N_ITERATIONS;
-	overheadMeanTime*=1000;
-	benchStatistics();
+	overheadMeanTime = uMeanTime / N_BATCHES;
+	overheadMeanTime *= 1000;
+	statistics();
 }
 void divisionBench()
 {
-	SerialUSB.println("<Division>");
+	LogSerial.println("<Division>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			B / C;
+			randomizeVariables();
+			A = B / C;
+			i = k;
+			// B / C;
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
 void multiplicationBench()
 {
-	SerialUSB.println("<Multiplication>");
+	LogSerial.println("<Multiplication>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			B *C;
+			randomizeVariables();
+			A = B * C;
+			i = k;
+			// B * C;
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
 void sumBench()
 {
-	SerialUSB.println("<Sum>");
+	LogSerial.println("<Sum>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			B + C;
+			randomizeVariables();
+			A = B + C;
+			i = k;
+			// B + C;
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
 void subBench()
 {
-	SerialUSB.println("<Subtraction>");
+	LogSerial.println("<Subtraction>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			B - C;
+			randomizeVariables();
+			A = B - C;
+			i = k;
+			// B - C;
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
 void atributionBench()
 {
-	SerialUSB.println("<Atribuition>");
+	LogSerial.println("<Atribution>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			A = B;
+			randomizeVariables();
+			B = C;
+			i = k;
+			// A = C;
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
 void remainderBench()
 {
-	SerialUSB.println("<Remainder>");
+	LogSerial.println("<Remainder>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			i%j;
+			randomizeVariables();
+			A = B;
+			k = i % j;
+			// i % j;
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
 void andBench()
 {
-	SerialUSB.println("<Logic AND>");
+	LogSerial.println("<Logic AND>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			i&j;
+			randomizeVariables();
+			A = B;
+			k = i & j;
+			// i & j;
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
 void orBench()
 {
-	SerialUSB.println("<Logic OR>");
+	LogSerial.println("<Logic OR>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			i|j;
+			randomizeVariables();
+			A = B;
+			k = i | j;
+			// i | j;
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
 
 void expBench()
 {
-	SerialUSB.println("<Exponential>");
+	LogSerial.println("<Exponential>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			exp(A);
+			randomizeVariables();
+			A = exp(B);
+			i = k;
+			// exp(B);
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
 void logBench()
 {
-	SerialUSB.println("<Natural Logarithm>");
+	LogSerial.println("<Natural Logarithm>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			log(A);
+			randomizeVariables();
+			A = log(B);
+			i = k;
+			// log(A);
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
 void sinBench()
 {
-	SerialUSB.println("<Sine>");
+	LogSerial.println("<Sine>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			sin(A);
+			randomizeVariables();
+			B = sin(A);
+			i = k;
+			// sin(A);
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
 void cosBench()
 {
-	SerialUSB.println("<Cossine>");
+	LogSerial.println("<Cossine>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			cos(A);
+			randomizeVariables();
+			B = cos(A);
+			i = k;
+			// cos(A);
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
 void tanBench()
 {
-	SerialUSB.println("<Tangent>");
+	LogSerial.println("<Tangent>");
 	uMeanTime = 0;
-	for (c = 0; c < N_ITERATIONS; c++)
+	for (c = 0; c < N_BATCHES; c++)
 	{
 		Start = micros();
-		for (c1 = 0; c1 < N_BATCH_ITERATIONS; c1++)
+		for (c1 = 0; c1 < numberBatchIterations; c1++)
 		{
-			tan(A);
+			randomizeVariables();
+			B = tan(A);
+			i = k;
+			// tan(A);
 		}
 		End = micros();
-		uMeanTime += ((double)(End - Start)) / N_BATCH_ITERATIONS;
-		uTime[c] = (((double)(End - Start))) / N_BATCH_ITERATIONS;
+		uTime[c] = (((double)(End - Start))) / numberBatchIterations;
+		uMeanTime += uTime[c];
 	}
-	benchStatistics();
+	statistics();
 }
-
-
+void line()
+{
+	LogSerial.println("________________________________________________");
+}
 void greeting()
 {
-	SerialUSB.println("<Ricardo Medeiros's Benchmark for Arduino Due>");
-	SerialUSB.println("<send 's' to start Benchmark>");
+	LogSerial.println("<Ricardo Medeiros's Benchmark for Arduino Due>");
+	LogSerial.println("<send 's' to start Benchmark>");
 }
 void loop()
 {
-
-	if (SerialUSB && !entrou)
+#if defined(ARDUINO_ARCH_SAM)
+	if (SerialUSB && !entrou) // Detects when Arduino Due SerialUSB is connected
+#else
+	if (&LogSerial && !entrou)
+#endif
 	{
 		greeting();
 		entrou = true;
 	}
 
-	char msg = SerialUSB.read();
+	char msg = LogSerial.read();
 
-	if (msg == 's')
+	if (entrou)
 	{
-		SerialUSB.println("STARTING");
+		String inString = "";
+		LogSerial.println("Enter the number of iterations in a batch: ");
+		while (!LogSerial.available())
+			;
+		while (LogSerial.available() > 0)
+		{
+			int inChar = LogSerial.read();
+			// convert the incoming byte to a char and add it to the string:
+			inString += (char)inChar;
+			// if you get a newline, print the string, then the string's value:
+			if (inChar == '\n')
+				break;
+		}
+		numberBatchIterations = inString.toInt();
+		LogSerial.println("STARTING");
+		LogSerial.print("Batches: ");
+		LogSerial.println(N_BATCHES);
+		LogSerial.print("Iterations in a Batch: ");
+		LogSerial.println(numberBatchIterations);
+		line();
 		overheadBench();
+		line();
 		sumBench();
+		line();
 		subBench();
+		line();
 		multiplicationBench();
+		line();
 		divisionBench();
+		line();
 		atributionBench();
-    remainderBench();
-    andBench();
-    orBench();
-    expBench();
-    logBench();
-    sinBench();
-    cosBench();
-    tanBench();
-		SerialUSB.println("ENDED");
+		line();
+		remainderBench();
+		line();
+		andBench();
+		line();
+		orBench();
+		line();
+		expBench();
+		line();
+		logBench();
+		line();
+		sinBench();
+		line();
+		cosBench();
+		line();
+		tanBench();
+		LogSerial.println("ENDED");
 	}
 }
